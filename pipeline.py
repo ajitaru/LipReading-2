@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import numpy as np
 import subprocess as sp
 import json
@@ -7,44 +8,88 @@ from scipy.io import wavfile
 import cv2
 import h5py
 
-def gen_vids_dict(main_path, min_length=None):
+def main(num_vids, length=3.0):
+	p = Path.cwd()
+	data_path = p.joinpath('data')
+	raw_data_path = p.joinpath('data', 'raw')
+
+	# Get the locations of all .mp4 files
+	clips = gen_vids_dict(raw_data_path, 3)
+
+	# Generate .wav file from .mp4 files
+	gen_audio_files(data_path, clips.keys(), 1, 8000)
+
+	# Create directory for final processed files
+	h5_path = data_path.joinpath('hdf5')
+	if not h5_path.exists():
+		print('Adding the hdf5 directory')
+		h5_path.mkdir()
+
+	# Create hdf5 file for each clip
+	for i, clip in enumerate(clips.keys()):
+		fname = clip.parent.name + '_' + clip.stem
+		audio_file = data_path.joinpath('audio',fname).with_suffix('.wav')
+
+		h5_file = h5_path.joinpath(fname).with_suffix('.hdf5')
+		if not h5_file.exists():
+			gen_hdf5(h5_file, audio_file, clip, 3, 25, 128, 128, 3)
+		
+		if i+1 >= num_vids:
+			break
+	return None
+
+def gen_vids_dict(data_path, min_length=None):
+	'''
+	Iterates through a directory of data and extracts paths to each video clip
+	as well as metadata about that video clip.
+	:param data_path: high level directory where all data is stored
+	:param min_length: Video clips shorter than this threshold will not be returned.
+					   Designed to ignore very short clips.
+	:return videos: Dictionary of video clips and corresponding metadata
+	'''
 	# Get directories where clips are found - ignore hidden files
-	vid_dirs = [x for x in os.listdir(main_path) if not x.startswith('.')]
+	vid_dirs = [x for x in data_path.iterdir() if x.is_dir()]
 
 	videos = {}
 	for vid_dir in vid_dirs:
-		clips = [x.split('.')[0] for x in os.listdir(main_path+vid_dir) if x.endswith('.mp4')]
-		for clip in clips:
-			clip_path = main_path+vid_dir+'/'+clip+'.mp4'
+		clip_paths = [x for x in vid_dir.glob('*.mp4')]
 
+		for clip_path in clip_paths:
 			# Extract vid info if vid is long enough or no min_length specified
 			# Avoid probing duration if possible - costly operation
 			if min_length is None:
-				contents = get_vid_info(main_path, vid_dir, clip)
-				videos[(vid_dir, clip)] = contents
+				contents = get_vid_info(clip_path)
+				videos[clip_path] = contents
 			# Check video length to make sure it is long enough
 			elif probe_duration(clip_path) >= min_length:
-				contents = get_vid_info(main_path, vid_dir, clip)
-				videos[(vid_dir, clip)] = contents
+				contents = get_vid_info(clip_path)
+				videos[clip_path] = contents
 			else:
 				pass
 
-	# Return a dictionary of video names and corresponding metadata
+	# Return a dictionary of clip_path and corresponding metadata
 	return videos
 
-def get_vid_info(main_path, vid_dir, clip):
-	meta_path = main_path+vid_dir+'/'+clip+'.txt'
-
+def get_vid_info(clip_path):
+	'''
+	This function extracts metadata for a video clip by reading
+	the txt file associated with a given video clip. 
+	:param clip_path: Path to a specific mp4 video clip
+	:return contents: Dictionary where key value pairs are metadata
+					  for the video clip.
+	'''
+	meta_path = clip_path.with_suffix('.txt')
 	# Read metadata for video into a dictionary
 	with open(meta_path) as fo:
 		contents = {}
 		for line in fo:
+			# Extract metadata for video
 			key, val = line.split(': ')
 			val = str.strip(val)
 			contents[key] = val
 	return contents
 
-def extract_audio(data_path, videos, ac=1, ar=8000):
+def gen_audio_files(data_path, clip_paths, ac=1, ar=8000):
 	'''
 	This function extracts .wav files from the raw .mp4 files
 	and places them in a separate audio/ directory
@@ -54,22 +99,25 @@ def extract_audio(data_path, videos, ac=1, ar=8000):
 	:param ar: Audio frequency of output file
 	:return: None 
 	'''
-	audio_path = data_path + 'audio/'
+	#audio_path = data_path + 'audio/'
+	audio_path = data_path.joinpath('audio')
 
 	# Create directory for processed audio files
-	if not os.path.exists(audio_path):
+	if not audio_path.exists():
 		print('Adding the audio data directory')
-		os.system('mkdir {}'.format(audio_path))
+		audio_path.mkdir()
 
-	for (vid_id, clip_id) in videos:
+	for clip_path in clip_paths:
 		# Generate file names
-		fname = vid_id+'_'+clip_id
-		raw_file = data_path+'raw/'+vid_id+'/'+clip_id+'.mp4'
-		audio_file = audio_path+fname+'.wav'
+		raw_file = str(clip_path)
 
-		# issue command to extract .wav from .mp4
-		cmd = 'ffmpeg -i {} -ac {} -ar {} {}'.format(raw_file, ac, ar, audio_file)
-		os.system(cmd)
+		fname = clip_path.parent.name + '_' + clip_path.stem
+		audio_file = audio_path.joinpath(fname).with_suffix('.wav')
+
+		if not audio_file.exists():
+			# issue command to extract .wav from .mp4
+			cmd = 'ffmpeg -loglevel error -i {} -ac {} -ar {} {}'.format(raw_file, ac, ar, audio_file)
+			os.system(cmd)
 
 	return None
 
@@ -80,54 +128,59 @@ def probe_duration(vid_file_path):
 	:return duration: Duration of video, in seconds
     '''
     command = ["ffprobe", "-loglevel",  "quiet", "-print_format", "json",
-            	"-show_format", "-show_streams", vid_file_path]
+            	"-show_format", "-show_streams", str(vid_file_path)]
 
     pipe = sp.Popen(command, stdout=sp.PIPE, stderr=sp.STDOUT)
-    out, err = pipe.communicate()
+    out, _ = pipe.communicate()
     json_out = json.loads(out)
     duration = json_out['streams'][0]['duration']
 
     return float(duration)
 
-def gen_hdf5(hdf5_path, wav_path, vid_path, clip_len, vid_sample_rate,
+def gen_hdf5(hdf5_path, wav_path, clip_path, clip_len, vid_sample_rate,
 			 height, width, channels):
 	num_frames = clip_len * vid_sample_rate
 	frames = gen_frames(clip_path, num_frames, height, width, channels)
-	spec = gen_spectrogram(wav_path)
+	_, _, spec = gen_spectrogram(wav_path)
 
-	with h5py.File(hdf5_path, 'w') as f:
+	with h5py.File(str(hdf5_path), 'w') as f:
 		f.create_dataset('frames', data=frames)
 		f.create_dataset('spectrogram', data=spec)
 	
 	return None
 
 def gen_frames(clip_path, num_frames, height, width, channels):
-
+	'''
+	Extract image frame array from an .mp4 file
+	:param clip_path: Path to the .mp4 file
+	:param num_frames: The desired number of frames to extract from the video
+	:param height: Height of the image frame
+	:param width: Width of the image frame
+	:param channels: number of channels in the image encoding (typically 3)
+	:return frames: NumPy array of shame (num_frames, height, width, num_channels)
+	'''
 	# Initialize frames array
 	frames = np.zeros(shape=[num_frames, height, width, channels])
 
 	# Initialize while loop
 	success = True
 	count = 0
-	cap = cv2.VideoCapture(vid_path)
+	cap = cv2.VideoCapture(str(clip_path))
 	while success and count<num_frames:
 		success, frame = cap.read()
-		
-		# Resize if necessary
-		if frame.shape != (height, width, channels):
-			frame = cv2.resize(frame, (height, width))
-		
-		# Store frame and move to next
-		frames[count] = frame
-		count += 1
+		if success:
+			# Resize if necessary
+			if frame.shape != (height, width, channels):
+				frame = cv2.resize(frame, (height, width))
+			
+			# Store frame and move to next
+			frames[count] = frame
+			count += 1
 
 	if not success:
-		print('Error generating frames from {}'.format(clip_path))
+		print('Error generating frames from {}'.format(str(clip_path)))
 
 	return frames
-
-
-	
 
 def gen_spectrogram(wav_path):
 	'''
@@ -137,7 +190,10 @@ def gen_spectrogram(wav_path):
 	:return times: list of times in the spectrogram
 	:return spectrogram: spectrogram as ndarray
 	'''
-	sample_rate, samples = wavfile.read(wav_path)
+	sample_rate, samples = wavfile.read(str(wav_path))
 	frequencies, times, spectrogram = signal.spectrogram(samples, sample_rate)
 
 	return frequencies, times, spectrogram
+
+if __name__ == '__main__':
+	main(10, 3)

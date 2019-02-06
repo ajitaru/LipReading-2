@@ -14,31 +14,33 @@ def main(num_vids, length=3.0):
 	raw_data_path = p.joinpath('data', 'raw')
 
 	# Get the locations of all .mp4 files
-	clips = gen_vids_dict(raw_data_path, 3)
-
-	# Generate .wav file from .mp4 files
-	gen_audio_files(data_path, clips.keys(), 1, 8000)
+	clips = gen_vids_dict(data_path=raw_data_path,
+						  max_samples=num_vids, min_length=length)
+	print('Found {} video clips'.format(len(clips)))
 
 	# Create directory for final processed files
 	h5_path = data_path.joinpath('hdf5')
 	if not h5_path.exists():
 		print('Adding the hdf5 directory')
 		h5_path.mkdir()
-
+	
 	# Create hdf5 file for each clip
 	for i, clip in enumerate(clips.keys()):
 		fname = clip.parent.name + '_' + clip.stem
-		audio_file = data_path.joinpath('audio',fname).with_suffix('.wav')
 
+		# Generate .wav file from .mp4 files
+		gen_audio_file(data_path, clip, length, 1, 8000)
+
+		audio_file = data_path.joinpath('audio',fname).with_suffix('.wav')
 		h5_file = h5_path.joinpath(fname).with_suffix('.hdf5')
 		if not h5_file.exists():
-			gen_hdf5(h5_file, audio_file, clip, 3, 25, 128, 128, 3)
+			gen_hdf5(h5_file, audio_file, clip, length, 25, 128, 128, 3)
 		
 		if i+1 >= num_vids:
 			break
 	return None
 
-def gen_vids_dict(data_path, min_length=None):
+def gen_vids_dict(data_path, max_samples, min_length=None):
 	'''
 	Iterates through a directory of data and extracts paths to each video clip
 	as well as metadata about that video clip.
@@ -55,6 +57,10 @@ def gen_vids_dict(data_path, min_length=None):
 		clip_paths = [x for x in vid_dir.glob('*.mp4')]
 
 		for clip_path in clip_paths:
+			# Exit function if max samples have already been encountered
+			if len(videos)>=max_samples:
+				return videos
+
 			# Extract vid info if vid is long enough or no min_length specified
 			# Avoid probing duration if possible - costly operation
 			if min_length is None:
@@ -89,7 +95,7 @@ def get_vid_info(clip_path):
 			contents[key] = val
 	return contents
 
-def gen_audio_files(data_path, clip_paths, ac=1, ar=8000):
+def gen_audio_file(data_path, clip_path, length, ac=1, ar=8000):
 	'''
 	This function extracts .wav files from the raw .mp4 files
 	and places them in a separate audio/ directory
@@ -107,17 +113,17 @@ def gen_audio_files(data_path, clip_paths, ac=1, ar=8000):
 		print('Adding the audio data directory')
 		audio_path.mkdir()
 
-	for clip_path in clip_paths:
-		# Generate file names
-		raw_file = str(clip_path)
+	# Generate file names
+	raw_file = str(clip_path)
 
-		fname = clip_path.parent.name + '_' + clip_path.stem
-		audio_file = audio_path.joinpath(fname).with_suffix('.wav')
+	fname = clip_path.parent.name + '_' + clip_path.stem
+	audio_file = audio_path.joinpath(fname).with_suffix('.wav')
 
-		if not audio_file.exists():
-			# issue command to extract .wav from .mp4
-			cmd = 'ffmpeg -loglevel error -i {} -ac {} -ar {} {}'.format(raw_file, ac, ar, audio_file)
-			os.system(cmd)
+	if not audio_file.exists():
+		# issue command to extract .wav from .mp4
+		cmd = 'ffmpeg -loglevel error -i {} -t {} -ac {} -ar {} {}'.\
+								format(raw_file, length, ac, ar, audio_file)
+		os.system(cmd)
 
 	return None
 
@@ -139,9 +145,9 @@ def probe_duration(vid_file_path):
 
 def gen_hdf5(hdf5_path, wav_path, clip_path, clip_len, vid_sample_rate,
 			 height, width, channels):
-	num_frames = clip_len * vid_sample_rate
+	num_frames = int(clip_len * vid_sample_rate)
 	frames = gen_frames(clip_path, num_frames, height, width, channels)
-	_, _, spec = gen_spectrogram(wav_path)
+	_, _, spec = gen_spectrogram(wav_path, clip_len)
 
 	with h5py.File(str(hdf5_path), 'w') as f:
 		f.create_dataset('frames', data=frames)
@@ -160,7 +166,7 @@ def gen_frames(clip_path, num_frames, height, width, channels):
 	:return frames: NumPy array of shame (num_frames, height, width, num_channels)
 	'''
 	# Initialize frames array
-	frames = np.zeros(shape=[num_frames, height, width, channels])
+	frames = np.zeros(shape=[num_frames, height, width, channels], dtype=np.float32)
 
 	# Initialize while loop
 	success = True
@@ -182,7 +188,7 @@ def gen_frames(clip_path, num_frames, height, width, channels):
 
 	return frames
 
-def gen_spectrogram(wav_path):
+def gen_spectrogram(wav_path, length):
 	'''
 	Generate a spectrogram from a .wav file
 	:param wav_path: absolute (full) path to the wav file
@@ -191,9 +197,14 @@ def gen_spectrogram(wav_path):
 	:return spectrogram: spectrogram as ndarray
 	'''
 	sample_rate, samples = wavfile.read(str(wav_path))
-	frequencies, times, spectrogram = signal.spectrogram(samples, sample_rate)
 
+	# Cap number of samples for desired clip length
+	num_samples = int(sample_rate * length)
+	samples = samples[:num_samples]
+
+	# Generate spectrogram
+	frequencies, times, spectrogram = signal.spectrogram(samples, sample_rate)
 	return frequencies, times, spectrogram
 
 if __name__ == '__main__':
-	main(10, 3)
+	main(500, 3.0)

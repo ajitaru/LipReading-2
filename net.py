@@ -25,7 +25,7 @@ class net():
 						activation=None, kernel_initializer='he_normal')
 		aud_conv_1 = tf.layers.batch_normalization(aud_conv_1, training=self.training)
 		aud_conv_1 = tf.nn.leaky_relu(aud_conv_1, alpha=0.2)
-        # Max Pooling (down-sampling) with strides of 2 and kernel size of 2
+		# Max Pooling (down-sampling) with strides of 2 and kernel size of 2
 		aud_conv_1 = tf.layers.max_pooling2d(aud_conv_1, 2, 2)
 
 		# Convolutional layer with 32 filters and a kernel size of 5
@@ -33,7 +33,7 @@ class net():
 						activation=None, kernel_initializer='he_normal')
 		aud_conv_2 = tf.layers.batch_normalization(aud_conv_2, training=self.training)
 		aud_conv_2 = tf.nn.leaky_relu(aud_conv_2, alpha=0.2)
-        # Max Pooling (down-sampling) with strides of 2 and kernel size of 2
+		# Max Pooling (down-sampling) with strides of 2 and kernel size of 2
 		aud_conv_2 = tf.layers.max_pooling2d(aud_conv_2, 2, 2)
 
 		aud_flat = tf.layers.flatten(aud_conv_2)

@@ -22,3 +22,22 @@ is double-checked against an off-the-shelf Kaldi-based ASR
 model."
 
 More information on the dataset can be found [here](http://www.robots.ox.ac.uk/~vgg/data/lip_reading/lrs3.html)
+## Code
+
+### pipeline.py
+This file contains the preprocssing steps necessary to convert the raw mp4 files into network inputs.
+The network uses video frames sampled at 25 Hz and audio signals converted to time vs. freq spectrograms.
+These inputs are stored in hdf5 files for use by the network. 
+
+The user must have download the data set linked above and store in the '.data/' directory.
+
+### net.py
+This file contains the TensorFlow network class to be used for training and inference. 
+
+### utils.py
+Network utilities are stored separately such as input data batch generation.
+
+### run.py
+Master training script that calls network training from the command line. Allows the user to use
+command line argument parsing for important hyperparameters and training parameters such as 
+batch size, learning rate, epochs, etc.

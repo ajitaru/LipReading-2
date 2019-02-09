@@ -9,11 +9,17 @@ import cv2
 import h5py
 
 def main(num_vids, length=3.0):
+	''' Main pipeline function to generate hdf5 files from raw mp4s
+	:param num_vids: number of videos to extract
+	:param length: desired length of each video in seconds
+	:return None - hdf5 files will be stored in the data directory
+	'''
+	# Get data paths
 	p = Path.cwd()
 	data_path = p.joinpath('data')
 	raw_data_path = p.joinpath('data', 'raw')
 
-	# Get the locations of all .mp4 files
+	# Get the path locations of all .mp4 files
 	clips = gen_vids_dict(data_path=raw_data_path,
 						  max_samples=num_vids, min_length=length)
 	print('Found {} video clips'.format(len(clips)))
@@ -28,14 +34,17 @@ def main(num_vids, length=3.0):
 	for i, clip in enumerate(clips.keys()):
 		fname = clip.parent.name + '_' + clip.stem
 
-		# Generate .wav file from .mp4 files
+		# Generate an intermediate .wav file from .mp4 file
 		gen_audio_file(data_path, clip, length, 1, 8000)
 
 		audio_file = data_path.joinpath('audio',fname).with_suffix('.wav')
 		h5_file = h5_path.joinpath(fname).with_suffix('.hdf5')
 		if not h5_file.exists():
-			gen_hdf5(h5_file, audio_file, clip, length, 25, 128, 128, 3)
-		
+			gen_hdf5(hdf5_path=h5_file, wav_path=audio_file, clip_path=clip,
+					 clip_len=length, vid_sample_rate=25, height=128,
+					 width=128, channels=3)
+
+		# Only create the specified number of videos
 		if i+1 >= num_vids:
 			break
 	return None
@@ -145,10 +154,23 @@ def probe_duration(vid_file_path):
 
 def gen_hdf5(hdf5_path, wav_path, clip_path, clip_len, vid_sample_rate,
 			 height, width, channels):
+	''' Generate an HDF5 file from a video clip and corresponding .wav file
+	This function calls the 'gen_frames' and 'gen_spectrogram' functions
+	to create the necessary data to populate the HDF5 file
+	:param hdf5_path: Desired path of the file created
+	:param wav_path: Path to the .wav file
+	:param clip_path: Path to the video clip
+	:param clip_len: Length of the video clip
+	:param vid_sample_rate: Sample rate of video frames
+	:params height, width, channels: Video frame dimesnions
+	:return None: hdf5 file is created in specified location
+	'''
+	# Generate video frame array and corresponding audio spectrogram
 	num_frames = int(clip_len * vid_sample_rate)
 	frames = gen_frames(clip_path, num_frames, height, width, channels)
 	_, _, spec = gen_spectrogram(wav_path, clip_len)
 
+	# Write data to file
 	with h5py.File(str(hdf5_path), 'w') as f:
 		f.create_dataset('frames', data=frames)
 		f.create_dataset('spectrogram', data=spec)

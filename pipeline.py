@@ -16,24 +16,22 @@ def main(data_path, num_vids, length=3.0):
 	'''
 
 	# Get data paths
-	p = Path(data_path)
-	raw_data_path = p.joinpath('raw')
+	data_path = Path(data_path)
+	raw_data_path = data_path.joinpath('raw')
 
 	# Get the path locations of all .mp4 files
 	clips = gen_vids_dict(data_path=raw_data_path,
 						  max_samples=num_vids, min_length=length)
 	print('Found {} video clips'.format(len(clips)))
-
 	# Create directory for final processed files
 	h5_path = data_path.joinpath('hdf5')
 	if not h5_path.exists():
 		print('Adding the hdf5 directory')
 		h5_path.mkdir()
-
 	for i, clip in enumerate(clips.keys()):
 		# Generate an intermediate .wav file from .mp4 file
 		gen_audio_file(data_path, clip, length, 1, 8000)
-
+	'''
 	# Create hdf5 file for each clip
 	for i, clip in enumerate(clips.keys()):
 		fname = clip.parent.name + '_' + clip.stem
@@ -48,6 +46,7 @@ def main(data_path, num_vids, length=3.0):
 		# Only create the specified number of videos
 		if i+1 >= num_vids:
 			break
+	'''
 	return None
 
 def gen_vids_dict(data_path, max_samples, min_length=None):
@@ -230,4 +229,4 @@ def gen_spectrogram(wav_path, length):
 	return frequencies, times, spectrogram
 
 if __name__ == '__main__':
-	main(16, 3.0)
+	main('/dvmm-filer2/users/hassan/iccv19_lipreading/data/LRS3/trainval', 100000, 3.0)

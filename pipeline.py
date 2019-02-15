@@ -8,16 +8,16 @@ from scipy.io import wavfile
 import cv2
 import h5py
 
-def main(num_vids, length=3.0):
+def main(data_path, num_vids, length=3.0):
 	''' Main pipeline function to generate hdf5 files from raw mp4s
 	:param num_vids: number of videos to extract
 	:param length: desired length of each video in seconds
 	:return None - hdf5 files will be stored in the data directory
 	'''
+
 	# Get data paths
-	p = Path.cwd()
-	data_path = p.joinpath('data')
-	raw_data_path = p.joinpath('data', 'raw')
+	p = Path(data_path)
+	raw_data_path = p.joinpath('raw')
 
 	# Get the path locations of all .mp4 files
 	clips = gen_vids_dict(data_path=raw_data_path,
@@ -29,13 +29,14 @@ def main(num_vids, length=3.0):
 	if not h5_path.exists():
 		print('Adding the hdf5 directory')
 		h5_path.mkdir()
-	
+
+	for i, clip in enumerate(clips.keys()):
+		# Generate an intermediate .wav file from .mp4 file
+		gen_audio_file(data_path, clip, length, 1, 8000)
+
 	# Create hdf5 file for each clip
 	for i, clip in enumerate(clips.keys()):
 		fname = clip.parent.name + '_' + clip.stem
-
-		# Generate an intermediate .wav file from .mp4 file
-		gen_audio_file(data_path, clip, length, 1, 8000)
 
 		audio_file = data_path.joinpath('audio',fname).with_suffix('.wav')
 		h5_file = h5_path.joinpath(fname).with_suffix('.hdf5')
@@ -229,4 +230,4 @@ def gen_spectrogram(wav_path, length):
 	return frequencies, times, spectrogram
 
 if __name__ == '__main__':
-	main(500, 3.0)
+	main(16, 3.0)
